@@ -30,7 +30,7 @@ jenkins_commenters_data.csv
 dist/
 
 #exclude temporary executables
-jenkins-get-commenters
+jenkins-get-pr
 
 #We don't want to keep debug traces
 debug.log
