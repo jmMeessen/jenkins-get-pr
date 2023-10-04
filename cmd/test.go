@@ -23,9 +23,7 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/shurcooL/githubv4"
@@ -44,7 +42,10 @@ Cobra is a CLI library for Go that empowers applications.
 This application is a tool to generate the needed files
 to quickly create a Cobra application.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		performTest()
+		err:=performTest()
+		if err != nil {
+			panic(err)
+		}
 	},
 }
 
@@ -89,23 +90,43 @@ func performTest() error {
 						} `graphql:"... on PullRequest"`
 					}
 				}
-			} `graphql:"search(first: $count, query: $searchQuery, type: ISSUE)"`
+				PageInfo struct {
+					EndCursor   githubv4.String
+					HasNextPage bool
+				}
+			} `graphql:"search(first: $count, after: $pullRequestCursor, query: $searchQuery, type: ISSUE)"`
 		}
 
 		variables := map[string]interface{}{
-			"searchQuery": githubv4.String(fmt.Sprintf(`org:%s is:pr -author:app/dependabot -author:app/renovate -author:jenkins-infra-bot created:2023-09-01..2023-09-30`, githubv4.String("jenkinsci"))),
-			"count":       githubv4.Int(10),
-		}
-		err := client.Query(context.Background(), &prQuery, variables)
-		if err != nil {
-			return (err)
+			"searchQuery":       githubv4.String(fmt.Sprintf(`org:%s is:pr -author:app/dependabot -author:app/renovate -author:app/github-actions -author:jenkins-infra-bot created:2023-09-01..2023-09-30`, githubv4.String("jenkinsci"))),
+			"count":             githubv4.Int(100),
+			"pullRequestCursor": (*githubv4.String)(nil), // Null after argument to get first page.
 		}
 
-		printJSON(prQuery)
+		i := 0
+		for {
+			err := client.Query(context.Background(), &prQuery, variables)
+			if err != nil {
+				return (err)
+			}
+
+			totalIssues := prQuery.Search.IssueCount
+			for ii, singlePr := range prQuery.Search.Edges {
+				fmt.Printf("%d-%d (%d/%d)  %s %s\n", i, ii, (i*100)+ii, totalIssues, singlePr.Node.PullRequest.Author.Login, singlePr.Node.PullRequest.Url)
+			}
+
+			if !prQuery.Search.PageInfo.HasNextPage {
+				break
+			}
+			variables["pullRequestCursor"] = githubv4.NewString(prQuery.Search.PageInfo.EndCursor)
+			i++
+		}
+		// printJSON(prQuery)
 	}
 	return nil
 }
 
+//GitHub Graphql query
 // {
 // 	rateLimit {
 // 	  limit
@@ -140,12 +161,3 @@ func performTest() error {
 //   }
 
 
-// printJSON prints v as JSON encoded with indent to stdout. It panics on any error.
-func printJSON(v interface{}) {
-	w := json.NewEncoder(os.Stdout)
-	w.SetIndent("", "\t")
-	err := w.Encode(v)
-	if err != nil {
-		panic(err)
-	}
-}
