@@ -73,7 +73,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&isRootDebug, "debug", "", false, "Display debug information (super verbose mode)")
 
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.jenkins-get-pr.yaml)")
-	
+
 	//Disable the Cobra completion options
 	rootCmd.CompletionOptions.DisableDefaultCmd = true
 

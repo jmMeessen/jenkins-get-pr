@@ -31,7 +31,6 @@ import (
 	"github.com/shurcooL/githubv4"
 	"github.com/spf13/cobra"
 	"golang.org/x/oauth2"
-
 	//See https://github.com/schollz/progressbar
 	// "github.com/schollz/progressbar/v3"
 )

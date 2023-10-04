@@ -22,7 +22,15 @@ THE SOFTWARE.
 package cmd
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"time"
+
+	"github.com/shurcooL/githubv4"
 	"github.com/spf13/cobra"
+	"golang.org/x/oauth2"
 )
 
 // testCmd represents the test command
@@ -43,17 +51,101 @@ to quickly create a Cobra application.`,
 func init() {
 	rootCmd.AddCommand(testCmd)
 
-	// Here you will define your flags and configuration settings.
-
-	// Cobra supports Persistent Flags which will work for this command
-	// and all subcommands, e.g.:
-	// testCmd.PersistentFlags().String("foo", "", "A help for foo")
-
-	// Cobra supports local flags which will only run when this command
-	// is called directly, e.g.:
-	// testCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 }
 
-func performTest() {
+func performTest() error {
 	initLoggers()
+
+	ghToken := loadGitHubToken(ghTokenVar)
+	src := oauth2.StaticTokenSource(
+		&oauth2.Token{AccessToken: ghToken},
+	)
+	httpClient := oauth2.NewClient(context.Background(), src)
+	client := githubv4.NewClient(httpClient)
+
+	{
+		var prQuery struct {
+			Viewer struct {
+				Login string
+			}
+			RateLimit struct {
+				Limit     int
+				Cost      int
+				Remaining int
+				ResetAt   time.Time
+			}
+			Search struct {
+				IssueCount int
+				Edges      []struct {
+					Node struct {
+						PullRequest struct {
+							Author struct {
+								Login string
+							}
+							CreatedAt time.Time
+							ClosedAt  time.Time
+							Url       string
+							Number    int
+						} `graphql:"... on PullRequest"`
+					}
+				}
+			} `graphql:"search(first: $count, query: $searchQuery, type: ISSUE)"`
+		}
+
+		variables := map[string]interface{}{
+			"searchQuery": githubv4.String(fmt.Sprintf(`org:%s is:pr -author:app/dependabot -author:app/renovate -author:jenkins-infra-bot created:2023-09-01..2023-09-30`, githubv4.String("jenkinsci"))),
+			"count":       githubv4.Int(10),
+		}
+		err := client.Query(context.Background(), &prQuery, variables)
+		if err != nil {
+			return (err)
+		}
+
+		printJSON(prQuery)
+	}
+	return nil
+}
+
+// {
+// 	rateLimit {
+// 	  limit
+// 	  cost
+// 	  remaining
+// 	  resetAt
+// 	}
+// 	search(
+// 	  query: "org:jenkinsci is:pr -author:app/dependabot -author:app/renovate -author:jenkins-infra-bot created:2023-09-01..2023-09-30"
+// 	  type: ISSUE
+// 	  first: 100
+// 	) {
+// 	  issueCount
+// 	  pageInfo {
+// 		endCursor
+// 		hasNextPage
+// 	  }
+// 	  edges {
+// 		node {
+// 		  ... on PullRequest {
+// 			author {
+// 			  login
+// 			}
+// 			createdAt
+// 			closedAt
+// 			url
+// 			number
+// 		  }
+// 		}
+// 	  }
+// 	}
+//   }
+
+
+// printJSON prints v as JSON encoded with indent to stdout. It panics on any error.
+func printJSON(v interface{}) {
+	w := json.NewEncoder(os.Stdout)
+	w.SetIndent("", "\t")
+	err := w.Encode(v)
+	if err != nil {
+		panic(err)
+	}
 }
